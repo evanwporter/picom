@@ -40,7 +40,8 @@ struct layout_manager {
 
 /// Compute layout of a layer from a window. Returns false if the window is not
 /// visible / should not be rendered. `out_layer` is modified either way.
-static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size) {
+static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size,
+                              struct camera camera) {
 	bool to_paint = false;
 	auto w_opts = win_options(w);
 	if (!w->ever_damaged || !w_opts.paint) {
@@ -52,12 +53,15 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 
 	out_layer->options = w_opts;
 	out_layer->scale = (vec2){
-	    .x = win_animatable_get(w, WIN_SCRIPT_SCALE_X),
-	    .y = win_animatable_get(w, WIN_SCRIPT_SCALE_Y),
+	    .x = win_animatable_get(w, WIN_SCRIPT_SCALE_X) * camera.scale,
+	    .y = win_animatable_get(w, WIN_SCRIPT_SCALE_Y) * camera.scale,
 	};
-	out_layer->window.origin =
-	    vec2_as((vec2){.x = w->g.x + win_animatable_get(w, WIN_SCRIPT_OFFSET_X),
-	                   .y = w->g.y + win_animatable_get(w, WIN_SCRIPT_OFFSET_Y)});
+	vec2 window_origin = {.x = w->g.x + win_animatable_get(w, WIN_SCRIPT_OFFSET_X),
+	                      .y = w->g.y + win_animatable_get(w, WIN_SCRIPT_OFFSET_Y)};
+	out_layer->window.origin = vec2_as((vec2){
+	    .x = camera.x + (window_origin.x - camera.x) * camera.scale,
+	    .y = camera.y + (window_origin.y - camera.y) * camera.scale,
+	});
 	out_layer->window.size = vec2_as((vec2){.width = w->widthb, .height = w->heightb});
 	out_layer->crop.origin = vec2_as((vec2){
 	    .x = win_animatable_get(w, WIN_SCRIPT_CROP_X),
@@ -68,21 +72,29 @@ static bool layer_from_window(struct layer *out_layer, struct win *w, ivec2 size
 	    .y = win_animatable_get(w, WIN_SCRIPT_CROP_HEIGHT),
 	});
 	if (w_opts.shadow) {
-		vec2 scale = {
+		vec2 animation_scale = {
 		    .x = win_animatable_get(w, WIN_SCRIPT_SHADOW_SCALE_X),
 		    .y = win_animatable_get(w, WIN_SCRIPT_SHADOW_SCALE_Y),
 		};
-		out_layer->shadow_scale = scale;
+		out_layer->shadow_scale = (vec2){
+		    .x = animation_scale.x * camera.scale,
+		    .y = animation_scale.y * camera.scale,
+		};
 		// If shadow_offset is not zero, the shadow and the window will have
 		// different scale origins. This manifests as shadow and window having an
 		// apparent movement relative to each other during a scale animation.
 		// Although this can be fixed in animation scripts, it's reasonable to
 		// expect shadows and windows are scaled at the same origin.
-		out_layer->shadow.origin =
-		    vec2_as((vec2){.x = w->g.x + w->shadow_dx * scale.x +
-		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_X),
-		                   .y = w->g.y + w->shadow_dy * scale.y +
-		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_Y)});
+		vec2 shadow_origin = {
+		    .x = w->g.x + w->shadow_dx * animation_scale.x +
+		         win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_X),
+		    .y = w->g.y + w->shadow_dy * animation_scale.y +
+		         win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_Y),
+		};
+		out_layer->shadow.origin = vec2_as((vec2){
+		    .x = camera.x + (shadow_origin.x - camera.x) * camera.scale,
+		    .y = camera.y + (shadow_origin.y - camera.y) * camera.scale,
+		});
 		out_layer->shadow.size =
 		    vec2_as((vec2){.width = w->shadow_width, .height = w->shadow_height});
 	} else {
@@ -208,7 +220,9 @@ void layout_manager_free(struct layout_manager *lm) {
 //   above.
 
 void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
-                                  uint64_t root_pixmap_generation, ivec2 size) {
+                                  uint64_t root_pixmap_generation, ivec2 size,
+                                  double camera_scale, double camera_x, double camera_y) {
+	struct camera camera = {.scale = camera_scale, .x = camera_x, .y = camera_y};
 	auto prev_layout = &lm->layouts[lm->current];
 	lm->current = (lm->current + 1) % lm->max_buffer_age;
 	auto layout = &lm->layouts[lm->current];
@@ -224,7 +238,7 @@ void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
 			continue;
 		}
 		dynarr_resize(layout->layers, rank + 1, layer_init, layer_deinit);
-		if (!layer_from_window(&layout->layers[rank], (struct win *)w, size)) {
+		if (!layer_from_window(&layout->layers[rank], (struct win *)w, size, camera)) {
 			continue;
 		}
 

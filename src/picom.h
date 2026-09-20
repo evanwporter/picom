@@ -31,6 +31,9 @@ void queue_redraw(session_t *ps);
 
 void configure_root(session_t *ps);
 
+/// Refresh the persistent global scale from the root window property.
+void update_global_scale(session_t *ps);
+
 void quit(session_t *ps);
 
 xcb_window_t session_get_target_window(session_t *);

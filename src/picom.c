@@ -922,6 +922,37 @@ void force_repaint(session_t *ps) {
 	queue_redraw(ps);
 }
 
+void update_global_scale(session_t *ps) {
+	const double old_scale = ps->camera.scale;
+	ps->camera.scale = 1.0;
+
+	winprop_t prop = x_get_prop(&ps->c, ps->c.screen_info->root,
+	                             ps->atoms->a_PICOM_GLOBAL_SCALE, 1,
+	                             XCB_GET_PROPERTY_TYPE_ANY, 0);
+	if (prop.format == 8 && prop.nitems > 0) {
+		char *text = ccalloc(prop.nitems + 1, char);
+		memcpy(text, prop.ptr, prop.nitems);
+		const char *end;
+		double scale = strtod_simple(text, &end);
+		if (end != text && isfinite(scale) && scale > 0) {
+			ps->camera.scale = scale;
+		}
+		free(text);
+	} else if (prop.format == 32 && prop.nitems > 0) {
+		float scale;
+		memcpy(&scale, prop.ptr, sizeof(scale));
+		if (isfinite(scale) && scale > 0) {
+			ps->camera.scale = scale;
+		}
+	}
+	free_winprop(&prop);
+
+	if (ps->camera.scale != old_scale) {
+		log_debug("Global scale changed to %.3f", ps->camera.scale);
+		force_repaint(ps);
+	}
+}
+
 /**
  * Setup window properties, then register us with the compositor selection (_NET_WM_CM_S)
  *
@@ -1720,7 +1751,8 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		}
 		layout_manager_append_layout(
 		    ps->layout_manager, ps->wm, ps->root_image_generation,
-		    (ivec2){.width = ps->root_width, .height = ps->root_height});
+		    (ivec2){.width = ps->root_width, .height = ps->root_height},
+		    ps->camera.scale, ps->camera.x, ps->camera.y);
 		bool succeeded = renderer_render(
 		    ps->renderer, ps->backend_data, ps->root_image, &ps->root_image_extent,
 		    ps->layout_manager, ps->command_builder, ps->backend_blur_context,
@@ -1989,6 +2021,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .backend_data = NULL,
 	    .root_height = 0,
 	    .root_width = 0,
+	    .camera = {.scale = 1.0},
 	    // .root_damage = XCB_NONE,
 	    .overlay = XCB_NONE,
 	    .reg_win = XCB_NONE,
@@ -2210,6 +2243,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ev_io_start(ps->loop, &ps->xiow);
 	ev_init(&ps->unredir_timer, tmout_unredir_callback);
 	ev_init(&ps->draw_timer, draw_callback);
+	update_global_scale(ps);
 
 	// Set up SIGUSR1 signal handler to reset program
 	ev_signal_init(&ps->usr1_signal, reset_enable, SIGUSR1);

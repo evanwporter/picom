@@ -71,6 +71,13 @@ struct shader_info {
 	UT_hash_handle hh;
 };
 
+/// Persistent transform applied to every window layer.
+struct camera {
+	double scale;
+	double x;
+	double y;
+};
+
 /// Structure containing all necessary data for a session.
 typedef struct session {
 	// === Event handlers ===
@@ -113,6 +120,8 @@ typedef struct session {
 	int root_width;
 	/// Height of root window.
 	int root_height;
+	/// Global desktop transform, controlled by _PICOM_GLOBAL_SCALE on the root window.
+	struct camera camera;
 	/// X Composite overlay window.
 	xcb_window_t overlay;
 	/// The target window for debug mode

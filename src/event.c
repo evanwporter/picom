@@ -545,7 +545,9 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	if (ps->c.screen_info->root == ev->window) {
-		if (ps->o.use_ewmh_active_win && ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
+		if (ps->atoms->a_PICOM_GLOBAL_SCALE == ev->atom) {
+			update_global_scale(ps);
+		} else if (ps->o.use_ewmh_active_win && ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
 			ev_update_focused(ps);
 		} else {
 			// Destroy the root "image" if the wallpaper probably changed
